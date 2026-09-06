@@ -20,6 +20,7 @@ dependencies = [
     "brotli>=1",
     "cloudpathlib>=0.20",
     "zstd>=1.5",
+    "tenacity>=9,<10",
     "joblib~=1.5.1",
     "numpy<2",
     "scikit-learn~=1.7.0",
