@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import os
 import subprocess
@@ -7,7 +8,7 @@ import sys
 import tempfile
 from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -151,25 +152,69 @@ def score_esmc(
     variants: Sequence[Sequence[Substitution]],
     config: RuntimeConfig,
 ) -> np.ndarray:
+    # Biohub ESM-C and fair-esm both own the "esm" namespace. Keep their
+    # imports in separate processes while retaining the same pinned weights.
+    source = Path(os.environ.get("CYTOLEXMUTA_ESMC_REPO", "/opt/ESMC"))
+    if not (source / "esm/models/esmc/model.py").is_file():
+        raise FileNotFoundError(f"missing pinned Biohub ESM-C source: {source}")
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join([str(source), *sys.path])
+    with tempfile.TemporaryDirectory(prefix="cytolexmuta_esmc_") as temporary:
+        work = Path(temporary)
+        request = work / "request.json"
+        output = work / "scores.npy"
+        request.write_text(
+            json.dumps(
+                {
+                    "reference": reference,
+                    "variants": [[asdict(m) for m in variant] for variant in variants],
+                    "config": asdict(config),
+                }
+            )
+        )
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "proteingym.models.cytolexmuta.esmc_worker",
+                str(request),
+                str(output),
+            ],
+            env=environment,
+            check=True,
+        )
+        result = np.load(output, allow_pickle=False)
+    if result.shape != (len(variants),) or not np.isfinite(result).all():
+        raise ValueError("invalid ESM-C worker output")
+    return result
+
+
+def _score_esmc_native(
+    reference: str,
+    variants: Sequence[Sequence[Substitution]],
+    config: RuntimeConfig,
+) -> np.ndarray:
     unique = sorted({mutation for mutations in variants for mutation in mutations})
     if not unique:
         return np.zeros(len(variants), dtype=np.float64)
 
     import torch
     from torch.nn import functional
-    from transformers import AutoModelForMaskedLM, AutoTokenizer
 
     device = _resolve_device(config.device)
     dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
-    tokenizer = AutoTokenizer.from_pretrained(
+    from esm.models.esmc import EsmcForMaskedLM, EsmcTokenizer
+
+    tokenizer = EsmcTokenizer.from_pretrained(
         config.esmc_model_id,
         revision=config.esmc_revision,
     )
     model = (
-        AutoModelForMaskedLM.from_pretrained(
+        EsmcForMaskedLM.from_pretrained(
             config.esmc_model_id,
             revision=config.esmc_revision,
-            torch_dtype=dtype,
+            dtype=dtype,
+            device=device,
         )
         .to(device)
         .eval()
@@ -438,11 +483,12 @@ def score_esm_if1(
     import biotite.structure
     import esm
     import torch
-    from esm.inverse_folding.util import CoordBatchConverter, load_coords
     from torch.nn import functional
 
     if not hasattr(biotite.structure, "filter_backbone"):
         biotite.structure.filter_backbone = biotite.structure.filter_peptide_backbone
+    from esm.inverse_folding.util import CoordBatchConverter, load_coords
+
     coordinates, pdb_sequence = load_coords(str(pdb_path), chain)
     if pdb_sequence != reference:
         raise ValueError("PDB/WT sequence mismatch during ESM-IF1 scoring")

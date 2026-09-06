@@ -12,7 +12,10 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python \
 RUN uv python install 3.12 \
     && git clone https://github.com/ai4protein/ProSST.git /opt/ProSST \
     && cd /opt/ProSST \
-    && git checkout 0bcfae91356d70e0da56fdd9bade4a3e7944769c
+    && git checkout 0bcfae91356d70e0da56fdd9bade4a3e7944769c \
+    && git clone https://github.com/Biohub/esm.git /opt/ESMC \
+    && cd /opt/ESMC \
+    && git checkout bf343ba264b650dff7a073643725f9aaa1fdbe8d
 
 WORKDIR /opt/program
 COPY README.md pyproject.toml uv.lock ./

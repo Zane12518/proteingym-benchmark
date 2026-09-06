@@ -1,4 +1,4 @@
-"""Small PyTorch-native subset used by the pinned ProSST structure encoder."""
+"""PyTorch-native reductions used by pinned ProSST and fair-esm encoders."""
 
 from __future__ import annotations
 
@@ -30,6 +30,23 @@ def scatter_sum(
 
 
 scatter_add = scatter_sum
+
+
+def scatter(
+    src: torch.Tensor,
+    index: torch.Tensor,
+    dim: int = -1,
+    out: torch.Tensor | None = None,
+    dim_size: int | None = None,
+    reduce: str = "sum",
+) -> torch.Tensor:
+    if reduce in ("sum", "add"):
+        return scatter_sum(src, index, dim, out, dim_size)
+    if reduce == "mean":
+        return scatter_mean(src, index, dim, out, dim_size)
+    if reduce == "max":
+        return scatter_max(src, index, dim, out, dim_size)[0]
+    raise NotImplementedError(f"unsupported scatter reduction: {reduce}")
 
 
 def scatter_mean(

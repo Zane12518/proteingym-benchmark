@@ -77,6 +77,12 @@ The public [`cytolex/cytolexmuta`](https://huggingface.co/datasets/cytolex/cytol
 Full217 prediction release is retained as a numerical regression reference.
 It is not consulted by the production scorer.
 
+The ESM-C implementation is pinned to `Biohub/esm` commit
+`bf343ba264b650dff7a073643725f9aaa1fdbe8d` and runs in a child process,
+because Biohub ESM-C and fair-esm (ESM-IF1) use the same Python package name.
+The Docker image includes this source at `/opt/ESMC`; offline installations
+can set `CYTOLEXMUTA_ESMC_REPO` to the same pinned checkout.
+
 ## Resource note
 
 The four experts are loaded sequentially so their neural checkpoints do not
